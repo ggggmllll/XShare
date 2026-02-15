@@ -20,11 +20,14 @@ add_library(XShare SHARED)
 target_sources(XShare
     PRIVATE
         src/XShare.c
+        src/shared_table.c
+        src/GC.c
+        src/stored_object.c
     PUBLIC
         FILE_SET HEADERS
         TYPE HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src 
-        FILES src/XShare.h
+        FILES src/shared_table.h src/GC.h src/stored_object.h
 )
 
 target_include_directories(XShare PRIVATE lua)
