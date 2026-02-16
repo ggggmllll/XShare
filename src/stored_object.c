@@ -154,7 +154,6 @@ static StoredObject* stored_create_impl(lua_State* L, int idx, VisitedNode** vis
                     goto fail;
                 }
                 int nup = ar.nups;
-                lua_pop(L, 1);            // 弹出被lua_getinfo消耗的副本
 
                 // 分配FunctionData
                 FunctionData* fdata = calloc(1, sizeof(FunctionData) + nup * sizeof(StoredObject*));
@@ -224,6 +223,7 @@ static StoredObject* stored_create_impl(lua_State* L, int idx, VisitedNode** vis
             }
             break;
         case LUA_TTABLE: {
+            int abs_idx = lua_absindex(L, idx);   // 获取绝对索引
             const void* ptr = lua_topointer(L, idx);
             StoredObject* found = find_visited(*visited, ptr);
             if (found) return found;
@@ -246,7 +246,7 @@ static StoredObject* stored_create_impl(lua_State* L, int idx, VisitedNode** vis
             sobj->data.table_copy = tc;                  // ③ 再次赋值（实际已赋过，但安全）
 
             lua_pushnil(L);
-            while (lua_next(L, idx)) {
+            while (lua_next(L, abs_idx)) {
                 StoredObject* key = stored_create_impl(L, -2, visited);
                 StoredObject* val = stored_create_impl(L, -1, visited);
                 lua_pop(L, 1);

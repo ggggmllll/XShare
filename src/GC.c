@@ -96,6 +96,7 @@ void gc_add_reference(GCObject* from, GCObject* to) {
     }
     
     from->strongRefs[from->strongSize++] = to;
+    gc_retain(to);   // 增加目标对象的引用计数
     pthread_rwlock_unlock(&gc->rwlock);
 }
 
@@ -108,6 +109,7 @@ void gc_remove_reference(GCObject* from, GCObject* to) {
         if (from->strongRefs[i] == to) {
             // 用最后一个元素覆盖要删除的元素
             from->strongRefs[i] = from->strongRefs[--from->strongSize];
+            gc_release(to);   // 减少目标对象的引用计数
             break;
         }
     }

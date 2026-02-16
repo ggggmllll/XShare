@@ -46,7 +46,7 @@ static int l_gc_enabled(lua_State* L) {
 }
 
 // 注册模块
-int luaopen_xshare(lua_State* L) {
+int luaopen_XShare(lua_State* L) {
     // 创建metatable
     luaL_newmetatable(L, SHARED_TABLE_MT);
     static const luaL_Reg mt[] = {

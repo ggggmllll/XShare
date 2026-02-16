@@ -64,13 +64,15 @@ int shared_table_set(SharedTable* tbl, StoredObject* key, StoredObject* val) {
     pthread_rwlock_wrlock(&tbl->lock);
     int idx = find_key_index(tbl, key);
     if (idx >= 0) {
+        // 替换：释放旧值，设置新值
         gc_release((GCObject*)tbl->entries.vals[idx]);
         tbl->entries.vals[idx] = val;
         gc_add_reference((GCObject*)tbl, (GCObject*)val);
     } else {
+        // 新增
         if (!ensure_capacity(tbl, tbl->entries.size + 1)) {
             pthread_rwlock_unlock(&tbl->lock);
-            return 0;
+            return 0;  // 失败
         }
         tbl->entries.keys[tbl->entries.size] = key;
         tbl->entries.vals[tbl->entries.size] = val;
@@ -79,7 +81,7 @@ int shared_table_set(SharedTable* tbl, StoredObject* key, StoredObject* val) {
         gc_add_reference((GCObject*)tbl, (GCObject*)val);
     }
     pthread_rwlock_unlock(&tbl->lock);
-    return 1;
+    return 1;  // 成功
 }
 
 StoredObject* shared_table_get(SharedTable* tbl, StoredObject* key) {
@@ -186,7 +188,7 @@ StoredObject* shared_table_get_metatable(SharedTable* tbl) {
 
 // ---------- Lua 绑定 ----------
 
-const char* SHARED_TABLE_MT = "xshare.shared_table";
+const char* SHARED_TABLE_MT = "XShare.table";
 
 // 辅助：从栈上获取SharedTable*（userdata）
 SharedTable* check_shared_table(lua_State* L, int idx) {
@@ -254,21 +256,35 @@ int l_shared_table_index(lua_State* L) {
     StoredObject* mt = shared_table_get_metatable(tbl);
     if (mt && mt->type == STORED_SHARED_TABLE) {
         SharedTable* mttbl = mt->data.shared_table;
-        StoredObject* mtkey = stored_create(L, 2);
-        if (!mtkey) return luaL_error(L, "invalid key for metatable");
-        StoredObject* mtval = shared_table_get(mttbl, mtkey);
-        gc_release((GCObject*)mtkey);
-        if (mtval) {
-            if (mtval->type == STORED_FUNCTION) {
+
+        // 创建 "__index" 键
+        lua_pushstring(L, "__index");
+        StoredObject* index_key = stored_create(L, -1);
+        lua_pop(L, 1);
+        if (!index_key) return luaL_error(L, "out of memory");
+
+        StoredObject* index_val = shared_table_get(mttbl, index_key);
+        gc_release((GCObject*)index_key);
+
+        if (index_val) {
+            if (index_val->type == STORED_FUNCTION) {
                 // 调用函数
-                stored_push(L, mtval);
+                stored_push(L, index_val);
                 lua_pushvalue(L, 1); // self
                 lua_pushvalue(L, 2); // key
                 lua_call(L, 2, LUA_MULTRET);
-                return lua_gettop(L) - 3; // 减去栈上的self,key,func
-            } else {
-                stored_push(L, mtval);
-                return 1;
+                return lua_gettop(L) - 2; // 减去栈上的 self, key, func
+            } else if (index_val->type == STORED_SHARED_TABLE) {
+                // 如果是表，则在该表中查找原始键
+                SharedTable* index_tbl = index_val->data.shared_table;
+                StoredObject* mtkey = stored_create(L, 2);
+                if (!mtkey) return luaL_error(L, "invalid key for metatable");
+                StoredObject* mtval = shared_table_get(index_tbl, mtkey);
+                gc_release((GCObject*)mtkey);
+                if (mtval) {
+                    stored_push(L, mtval);
+                    return 1;
+                }
             }
         }
     }
@@ -291,12 +307,24 @@ int l_shared_table_newindex(lua_State* L) {
     StoredObject* mt = shared_table_get_metatable(tbl);
     if (mt && mt->type == STORED_SHARED_TABLE) {
         SharedTable* mttbl = mt->data.shared_table;
-        StoredObject* mtkey = stored_create(L, 2);
-        if (mtkey) {
-            StoredObject* mtfunc = shared_table_get(mttbl, mtkey);
-            if (mtfunc && mtfunc->type == STORED_FUNCTION) {
+
+        // 创建 "__newindex" 键
+        lua_pushstring(L, "__newindex");
+        StoredObject* newindex_key = stored_create(L, -1);
+        lua_pop(L, 1);
+        if (!newindex_key) {
+            gc_release((GCObject*)key);
+            gc_release((GCObject*)val);
+            return luaL_error(L, "out of memory");
+        }
+
+        StoredObject* newindex_val = shared_table_get(mttbl, newindex_key);
+        gc_release((GCObject*)newindex_key);
+
+        if (newindex_val) {
+            if (newindex_val->type == STORED_FUNCTION) {
                 // 调用函数
-                stored_push(L, mtfunc);
+                stored_push(L, newindex_val);
                 lua_pushvalue(L, 1); // self
                 lua_pushvalue(L, 2); // key
                 lua_pushvalue(L, 3); // value
@@ -304,10 +332,26 @@ int l_shared_table_newindex(lua_State* L) {
                 gc_release((GCObject*)key);
                 gc_release((GCObject*)val);
                 return 0;
+            } else if (newindex_val->type == STORED_SHARED_TABLE) {
+                // 如果是表，则在该表中进行赋值
+                SharedTable* index_tbl = newindex_val->data.shared_table;
+                if (val->type == STORED_NIL) {
+                    shared_table_delete(index_tbl, key);
+                } else {
+                    if (!shared_table_set(index_tbl, key, val)) {
+                        gc_release((GCObject*)key);
+                        gc_release((GCObject*)val);
+                        return luaL_error(L, "failed to set table entry (out of memory)");
+                    }
+                }
+                gc_release((GCObject*)key);
+                gc_release((GCObject*)val);
+                return 0;
             }
         }
     }
 
+    // 没有元方法或元方法不处理，执行默认赋值
     if (val->type == STORED_NIL) {
         shared_table_delete(tbl, key);
     } else {
