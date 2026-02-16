@@ -1,7 +1,5 @@
-#include "lua.h"
+#include "XShare.h"
 #include "lauxlib.h"
-#include "shared_table.h"
-#include "GC.h"
 
 // GC 相关 Lua 函数
 static int l_gc_collect(lua_State* L) {
