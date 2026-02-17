@@ -80,4 +80,4 @@ CMakeUserPresets.json
 **/[Bb][Uu][Ii][Ll][Dd]/
 **/[Oo][Uu][Tt]/
 **/[Tt][Mm][Pp]/
-.cache/
+**/.cache/

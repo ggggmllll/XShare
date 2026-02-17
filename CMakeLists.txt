@@ -6,6 +6,15 @@ include(ExternalProject)
 
 find_program(MAKE_EXE make)
 
+ExternalProject_Add(
+    Lua 
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lua
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ${MAKE_EXE} CFLAGS="-fPIC" a
+    BUILD_IN_SOURCE TRUE
+    INSTALL_COMMAND ""
+)
+
 add_library(XShare SHARED)
 
 target_sources(XShare
@@ -24,6 +33,7 @@ target_sources(XShare
 target_include_directories(XShare PRIVATE lua)
 target_link_directories(XShare PRIVATE lua)
 
+add_dependencies(XShare Lua)
 target_link_libraries(XShare PRIVATE lua m)
 
 if(BUILD_STATIC_LIB)
